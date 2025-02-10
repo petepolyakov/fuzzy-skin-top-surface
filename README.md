@@ -4,8 +4,11 @@ The processed G-code is then visualized in a dynamic 3D viewer that renders the 
 
 Possible Usage:
 Pre-Print Visualization: Quickly assess and iterate on surface modifications before committing to a print, reducing waste and trial-and-error.
+
 Design Experimentation: Test various fuzzy skin parameters (e.g., amplitude, frequency, top layers) to achieve unique surface textures for artistic or functional purposes.
+
 Quality Assurance: Simulate and inspect how subtle adjustments to extrusion paths affect print quality, helping to identify potential issues early in the design process.
+
 Educational Tool: Serve as a practical example for learning advanced G-code post-processing techniques and understanding the relationship between toolpath modifications and printed outcomes.
 
 This feature is ideal for 3D printing enthusiasts, designers, and engineers looking to innovate, refine, and visualize surface textures and effects directly from their digital models before printing.
