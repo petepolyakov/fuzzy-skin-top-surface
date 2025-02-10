@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>Fuzzy Skin G-code Processor with Shading & Shadows</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        margin: 2em;
+      }
+      input, button {
+        padding: 0.5em;
+        margin: 0.5em 0;
+      }
+      #viewers {
+        display: flex;
+        justify-content: space-around;
+        margin-top: 2em;
+      }
+      .viewer-container {
+        width: 45%;
+      }
+      .viewer-container h2 {
+        text-align: center;
+      }
+      .viewer {
+        width: 100%;
+        height: 400px;
+        border: 1px solid #ccc;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Fuzzy Skin G-code Processor</h1>
+    <p>
+      Upload your G‑code file to apply a fuzzy skin effect to the top layers.
+      Adjust the top layers, amplitude, and frequency as needed.
+      The preview simulates extrusion (with thickness) along with realistic lighting,
+      shading, and shadows cast onto a 100×100 plane.
+    </p>
+    <form id="uploadForm">
+      <input type="file" id="gcodeInput" accept=".gcode,.txt" required /><br>
+      <label for="topLayers">Top Layers:</label>
+      <input type="number" id="topLayers" value="5" step="1" min="1" /><br>
+      <label for="amplitude">Amplitude (mm):</label>
+      <input type="number" id="amplitude" value="0.1" step="0.01" min="0.01" /><br>
+      <label for="frequency">Frequency:</label>
+      <input type="number" id="frequency" value="10.0" step="0.1" min="0.1" /><br>
+      <button type="submit">Process File</button>
+    </form>
+
+    <div id="viewers">
+      <div class="viewer-container">
+        <h2>Before</h2>
+        <div id="viewerBefore" class="viewer"></div>
+      </div>
+      <div class="viewer-container">
+        <h2>After</h2>
+        <div id="viewerAfter" class="viewer"></div>
+      </div>
+    </div>
+
+    <!-- Include Three.js from a CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+      // Global variables to hold G-code content.
+      let originalGCode = '';
+      let processedGCode = '';
+
+      // Listen for form submission.
+      document.getElementById('uploadForm').addEventListener('submit', function(e) {
+        e.preventDefault();
+        const fileInput = document.getElementById('gcodeInput');
+        if (fileInput.files.length === 0) return;
+        const file = fileInput.files[0];
+        const reader = new FileReader();
+        reader.onload = function(event) {
+          originalGCode = event.target.result;
+          // Retrieve user parameters.
+          const topLayers = parseInt(document.getElementById('topLayers').value, 10) || 5;
+          const amplitude = parseFloat(document.getElementById('amplitude').value) || 0.1;
+          const frequency = parseFloat(document.getElementById('frequency').value) || 10.0;
+          // Process the G-code to apply the fuzzy skin effect.
+          processedGCode = processGCode(originalGCode, topLayers, amplitude, frequency);
+          // Visualize both versions.
+          visualizeGCode(originalGCode, 'viewerBefore');
+          visualizeGCode(processedGCode, 'viewerAfter');
+        };
+        reader.readAsText(file);
+      });
+
+      // --- Fuzzy Skin Processing Functions ---
+      function processGCode(content, topLayers, amplitude, frequency) {
+        const lines = content.split(/\r?\n/);
+        let layerIndices = [];
+        lines.forEach((line, index) => {
+          if (line.startsWith('; layer ')) {
+            layerIndices.push(index);
+          }
+        });
+        let startIndex = 0;
+        if (layerIndices.length > 0) {
+          const totalLayers = layerIndices.length;
+          startIndex = totalLayers >= topLayers ? layerIndices[totalLayers - topLayers] : layerIndices[0];
+        }
+        let currentLayer = 0;
+        for (let i = 0; i < lines.length; i++) {
+          if (lines[i].startsWith('; layer ')) {
+            currentLayer++;
+          }
+          if (i >= startIndex) {
+            lines[i] = addFuzzySkin(lines[i], currentLayer, amplitude, frequency);
+          }
+        }
+        return lines.join('\n');
+      }
+
+      function addFuzzySkin(line, layer, amplitude, frequency) {
+        if (!line.startsWith('G1') || (!line.includes('X') && !line.includes('Y'))) {
+          return line;
+        }
+        const xMatch = line.match(/X([-+]?[0-9]*\.?[0-9]+)/);
+        const yMatch = line.match(/Y([-+]?[0-9]*\.?[0-9]+)/);
+        if (!xMatch || !yMatch) return line;
+        let x = parseFloat(xMatch[1]);
+        let y = parseFloat(yMatch[1]);
+        // Calculate the offset using sine and cosine functions.
+        const offsetX = amplitude * Math.sin(layer * frequency + x);
+        const offsetY = amplitude * Math.cos(layer * frequency + y);
+        const newX = x + offsetX;
+        const newY = y + offsetY;
+        line = line.replace(/X([-+]?[0-9]*\.?[0-9]+)/, 'X' + newX.toFixed(3));
+        line = line.replace(/Y([-+]?[0-9]*\.?[0-9]+)/, 'Y' + newY.toFixed(3));
+        return line;
+      }
+
+      // --- Three.js Visualization Functions ---
+      // Parses G-code into an array of THREE.Vector3 vertices.
+      function parseGCodeToVertices(gcode) {
+        const lines = gcode.split(/\r?\n/);
+        let vertices = [];
+        let currentPos = { X: 0, Y: 0, Z: 0 };
+        lines.forEach(line => {
+          if (line.startsWith('G1')) {
+            const xMatch = line.match(/X([-+]?[0-9]*\.?[0-9]+)/);
+            const yMatch = line.match(/Y([-+]?[0-9]*\.?[0-9]+)/);
+            const zMatch = line.match(/Z([-+]?[0-9]*\.?[0-9]+)/);
+            if (xMatch) currentPos.X = parseFloat(xMatch[1]);
+            if (yMatch) currentPos.Y = parseFloat(yMatch[1]);
+            if (zMatch) currentPos.Z = parseFloat(zMatch[1]);
+            // For visualization, treat Z as the vertical axis.
+            vertices.push(new THREE.Vector3(currentPos.X, currentPos.Z, currentPos.Y));
+          }
+        });
+        return vertices;
+      }
+
+      // Visualizes the G-code as an extruded tube with realistic lighting and shadows.
+      function visualizeGCode(gcode, containerId) {
+        const container = document.getElementById(containerId);
+        container.innerHTML = ''; // Clear previous content.
+        const scene = new THREE.Scene();
+
+        // Set up camera.
+        const width = container.clientWidth;
+        const height = container.clientHeight;
+        const camera = new THREE.PerspectiveCamera(75, width / height, 0.1, 1000);
+        camera.position.set(50, 50, 50);
+        camera.lookAt(0, 0, 0);
+
+        // Set up renderer.
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(width, height);
+        renderer.shadowMap.enabled = true;
+        container.appendChild(renderer.domElement);
+
+        // Add ambient light.
+        const ambientLight = new THREE.AmbientLight(0x404040);
+        scene.add(ambientLight);
+
+        // Add directional (sun) light at a 45° angle.
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
+        directionalLight.position.set(50, 50, 50);
+        directionalLight.castShadow = true;
+        directionalLight.shadow.mapSize.width = 1024;
+        directionalLight.shadow.mapSize.height = 1024;
+        directionalLight.shadow.camera.near = 0.5;
+        directionalLight.shadow.camera.far = 500;
+        directionalLight.shadow.camera.left = -50;
+        directionalLight.shadow.camera.right = 50;
+        directionalLight.shadow.camera.top = 50;
+        directionalLight.shadow.camera.bottom = -50;
+        scene.add(directionalLight);
+
+        // Create a square plane (100×100) that receives shadows.
+        const planeGeometry = new THREE.PlaneGeometry(100, 100);
+        const planeMaterial = new THREE.MeshStandardMaterial({ color: 0x888888, side: THREE.DoubleSide });
+        const plane = new THREE.Mesh(planeGeometry, planeMaterial);
+        plane.rotation.x = -Math.PI / 2;
+        plane.receiveShadow = true;
+        scene.add(plane);
+
+        // Parse vertices from the G-code.
+        const vertices = parseGCodeToVertices(gcode);
+        if (vertices.length < 2) return;
+
+        // Create a curve from the vertices.
+        const curve = new THREE.CatmullRomCurve3(vertices);
+        const extrudeThickness = 0.5; // Adjust extrusion thickness as needed.
+        const tubularSegments = Math.max(vertices.length * 3, 20);
+        const radialSegments = 8;
+        const closed = false;
+        const tubeGeometry = new THREE.TubeGeometry(curve, tubularSegments, extrudeThickness, radialSegments, closed);
+
+        // Use a light gray material with shading.
+        const tubeMaterial = new THREE.MeshStandardMaterial({ color: 0xd3d3d3 });
+        const tubeMesh = new THREE.Mesh(tubeGeometry, tubeMaterial);
+        tubeMesh.castShadow = true;
+        tubeMesh.receiveShadow = true;
+        // Optionally, lift the tube slightly above the plane.
+        tubeMesh.position.y += extrudeThickness;
+        scene.add(tubeMesh);
+
+        // Optionally, add a grid helper for reference.
+        const gridHelper = new THREE.GridHelper(100, 10);
+        scene.add(gridHelper);
+
+        // Render the scene.
+        renderer.render(scene, camera);
+      }
+    </script>
+  </body>
+</html>
